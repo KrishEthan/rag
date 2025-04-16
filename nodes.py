@@ -1,4 +1,5 @@
 import logging
+from gtts import gTTS
 from model import PlanExecuteState, Plan, Act, Response
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import END
@@ -66,6 +67,9 @@ async def replanning_node(state: PlanExecuteState) -> PlanExecuteState | Respons
 
         if isinstance(response.action, Response):
             logger.info(f"Final response: {response.action.response}")
+            podcast_summary = await generate_podcast_summary(response.action.response)
+            await text_to_speech(podcast_summary)
+
             return {
                 "response": response.action.response,
             }
@@ -120,10 +124,57 @@ async def agent_action_node(state: PlanExecuteState) -> PlanExecuteState:
         content = response["messages"][-1].content
         await set_output_callback(content, name=ui_step)
         return {
+            "plan": plan[1:],  
+            "ui_steps": state["ui_steps"][1:] if state["ui_steps"] else [],
             "past_steps": state["past_steps"] + [(task, content)],
         }
     except Exception as e:
         logger.exception(f"Error in agent_action_node: {e}")
+        raise e
+
+async def generate_podcast_summary(final_response: str) -> str:
+    """
+    Generates a concise podcast-style summary from the final response.
+
+    Args:
+        final_response (str): The final response from the agent.
+
+    Returns:
+        str: A podcast-style summary text.
+    """
+    try:
+        summary_prompt = f"""
+        You are a podcast host summarizing a recent analysis. Create a concise, engaging summary (2-3 sentences) 
+        of the following content for a podcast audience. Use a friendly and conversational tone, 
+        and avoid technical jargon unless necessary:
+
+        {final_response}
+
+        Summary:
+        """
+        summary_response = await llm.ainvoke(summary_prompt)
+        summary_text = summary_response.content
+        logger.info(f"Generated podcast summary: {summary_text}")
+        return summary_text
+    except Exception as e:
+        logger.exception(f"Error in generate_podcast_summary: {e}")
+        raise e
+
+async def text_to_speech(text: str, output_file: str = "podcast_summary.mp3"):
+    """
+    Converts the given text to speech using gTTS and saves it as an MP3 file.
+
+    Args:
+        text (str): The text to convert to speech.
+        output_file (str): The name of the output MP3 file.
+    """
+    try:
+        logger.info(f"Converting text to speech: {text[:50]}...")
+        tts = gTTS(text=text, lang='en')
+        tts.save(output_file)
+        logger.info(f"Podcast summary saved as {output_file}")
+    except Exception as e:
+        logger.exception(f"Error in text_to_speech: {e}")
         raise e
 
 async def should_end(state: PlanExecuteState):
