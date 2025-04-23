@@ -24,35 +24,6 @@ app = workflow.compile()
 config = {"recursion_limit": 50}
 
 
-
-# @cl.on_chat_start
-# async def on_chat_start():
-#     """
-#     Handles the start of a chat session in Chainlit.  Uploads and processes the PDF.
-#     """
-#     files = await cl.AskFileMessage(
-#         content="Please upload a PDF file to begin!",
-#         accept=["application/pdf"],
-#         max_size_mb=20,
-#         timeout=180,
-#     ).send()
-
-#     if not files:
-#         await cl.Message(content="No file uploaded. Please upload a PDF.").send()
-#         return
-
-#     file = files[0]  
-#     file_path = file.path
-#     try:
-#         await cl.Message(content="Processing your PDF...").send()
-#         rag = EthanRAG()
-#         result = await rag.process_and_store_pdf(file_path, file.name)
-#         await cl.Message(content=result).send()
-#         await cl.Message(content="You can now ask questions about the document.").send()
-#     except Exception as e:
-#         await cl.Message(content=f"An error occurred during PDF processing: {e}").send()
- 
-
 @cl.on_message
 async def on_message(message: cl.Message):
     inputs = {"input": message.content}
@@ -65,7 +36,7 @@ async def on_message(message: cl.Message):
             file_path = pdf.path
             try:
                 rag = EthanRAG()
-                result = await rag.process_and_store_pdf(file_path, pdf.name)
+                result = rag.process_and_store_pdf(file_path, pdf.name)
                 step.name = "Processing your PDF..."
                 step.type = "embedding"
             except Exception as e:

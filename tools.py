@@ -130,7 +130,7 @@ async def retrieve_from_documents(query: str):
     """
     try:
         ethan_rag = EthanRAG()
-        result = await ethan_rag.process_query(query)
+        result = ethan_rag.query(query)
         return result
     except Exception as e:
         logger.exception(f"Document retrieval failed: {e}")

@@ -4,6 +4,8 @@ from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_core.documents import Document
 from google.cloud import documentai_v1beta3 as documentai
 from qdrant_client import QdrantClient
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import Qdrant
 from settings import env_settings
 
 logger = logging.getLogger(__name__)
@@ -16,23 +18,40 @@ GCP_LOCATION = env_settings.GCP_LOCATION
 GCP_PROCESSOR_ID = env_settings.GCP_PROCESSOR_ID
 GCP_PROCESSOR_VERSION = env_settings.GCP_PROCESSOR_VERSION
 
-
 class EthanRAG:
-    _qdrant_client: QdrantClient = None
 
-    def __init__(self):
-        if EthanRAG._qdrant_client is None:
-            EthanRAG._qdrant_client = self.connect_qdrant()
+    def get_documents(self, extracted_text: str) -> list[Document]:
+        try:
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                length_function=len,
+            )
+            documents = text_splitter.split_text(extracted_text)
+            return [Document(page_content=text) for text in documents]
+        except Exception as e:
+            logger.error(f"Error splitting text into documents: {e}")
+            raise e
+        
+    def create_qdrant_index(self, documents: list[Document], filename: str):
+        try:
+            logger.info(f"Creating Qdrant index for {filename}")
+            qdrant = Qdrant.from_documents(
+                documents,
+                api_key=QDRANT_API_KEY,
+                url=QDRANT_URL,
+                embedding=OpenAIEmbeddings(
+                    openai_api_key=OPENAI_API_KEY,
+                ),
+                collection_name="ethan-rag",
+            )
+            logger.info(f"Qdrant index created for {filename}")
+            return qdrant
+        except Exception as e:
+            logger.error(f"Error creating Qdrant index: {e}")
+            raise e
 
-    @staticmethod
-    def connect_qdrant() -> QdrantClient:
-        return QdrantClient(
-            api_key=QDRANT_API_KEY,
-            url=QDRANT_URL,
-        )
-
-    @staticmethod
-    async def extract_text_from_pdf(file_path: str) -> str:
+    def extract_text(self, file_path: str) -> str:
         try:
             logger.info(f"Processing with Google Document AI: {file_path}")
             client = documentai.DocumentProcessorServiceClient()
@@ -58,35 +77,34 @@ class EthanRAG:
         except Exception as e:
             logger.error(f"Error extracting text from PDF: {e}")
             raise e
-
-    async def process_and_store_pdf(file_path: str, filename: str):
+        
+    def process_and_store_pdf(self, file_path: str, filename: str):
         try:
-            extracted_text = await EthanRAG.extract_text_from_pdf(file_path)
-            text_splitter = CharacterTextSplitter(
-                chunk_size=20,
-                chunk_overlap=0,
-                strip_whitespace=False,
-                separator=""
-            )
-            chunks = text_splitter.create_documents([extracted_text])
-            embeddings = OpenAIEmbeddings(
-                api_key=OPENAI_API_KEY, 
-                model="text-embedding-3-large"
-            )
-            qdrant_client = EthanRAG._qdrant_client
-            qdrant_client.create_collection(
-                collection_name=filename,
-                embedding_function=embeddings,
-                vector_size=1536
-            )
-            qdrant_client.upload_documents(
-                collection_name=filename,
-                documents=chunks,
-                embeddings=embeddings,
-                metadata=[{"filename": filename}] * len(chunks)
-            )
-            logger.info(f"Successfully processed and stored PDF: {filename}")
-
+            logger.info(f"Processing and storing PDF: {file_path}")
+            extracted_text = self.extract_text(file_path)
+            documents = self.get_documents(extracted_text)
+            self.create_qdrant_index(documents, filename)
+            logger.info(f"PDF processed and stored successfully: {filename}")
         except Exception as e:
-            logger.error(f"Error processing PDF: {e}")
+            logger.error(f"Error processing and storing PDF: {e}")
             raise e
+        
+    def query(self, query: str, k: int = 5):
+        try:
+            logger.info(f"Querying Qdrant index with query: {query}")
+            qdrant = Qdrant(
+                client=QdrantClient(
+                    api_key=QDRANT_API_KEY,
+                    url=QDRANT_URL,
+                ),
+                embeddings=OpenAIEmbeddings(
+                    openai_api_key=OPENAI_API_KEY,
+                ),
+                collection_name="ethan-rag",
+            )
+            results = qdrant.similarity_search(query, k=k)
+            return results
+        except Exception as e:
+            logger.error(f"Error querying Qdrant index: {e}")
+            raise e
+    
