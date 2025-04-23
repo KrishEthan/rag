@@ -1,0 +1,17 @@
+chainlit==2.5.5
+gTTS==2.5.4
+langchain==0.3.24
+langchain_community==0.3.22
+langchain_core==0.3.55
+langchain_openai==0.3.14
+langgraph==0.3.31
+numexpr==2.10.2
+protobuf>=5.0,<6.0
+pydantic==2.11.3
+pydantic_settings==2.9.1
+qdrant_client==1.14.1
+Requests==2.32.3
+typing_extensions==4.13.2
+google-cloud==0.34.0
+google-cloud-documentai==3.3.0
+google-cloud-texttospeech==2.26.0

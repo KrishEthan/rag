@@ -1,13 +1,17 @@
+import os
 import logging
 from gtts import gTTS
 from model import PlanExecuteState, Plan, Act, Response
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import END
-from prompt import planner_prompt, replanner_prompt, agent_executor_prompt
+from prompt import planner_prompt, replanner_prompt
 from settings import env_settings
 from tools import internet_search_tool, stock_price_retrieval, stock_financial_metrics_retrieval, calculator, retrieve_from_documents
 from utils import set_output_callback, message_callback
 from langchain_openai import ChatOpenAI
+from google.cloud import texttospeech
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = env_settings.GOOGLE_APPLICATION_CREDENTIALS
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +71,9 @@ async def replanning_node(state: PlanExecuteState) -> PlanExecuteState | Respons
 
         if isinstance(response.action, Response):
             logger.info(f"Final response: {response.action.response}")
-            podcast_summary = await generate_podcast_summary(response.action.response)
-            await text_to_speech(podcast_summary)
+            # Uncomment the following lines to generate a podcast summary and convert it to speech
+            # podcast_summary = await generate_podcast_summary(response.action.response)
+            # await text_to_speech(podcast_summary)
 
             return {
                 "response": response.action.response,
@@ -99,7 +104,7 @@ async def agent_action_node(state: PlanExecuteState) -> PlanExecuteState:
         plan = state['plan']
         task = plan[0]
         input=state['input']
-        ui_step = state['ui_steps'][0]
+        ui_step = state["ui_steps"][0] if len(state["ui_steps"]) != 0 else None
 
         plan="\n".join(f"{i+1}. {step}" for i, step in enumerate(plan)),
         past_steps="\n".join([f"{t[0]}: {t[1]}" for t in state["past_steps"]]) if state["past_steps"] else "None yet",
@@ -170,9 +175,20 @@ async def text_to_speech(text: str, output_file: str = "podcast_summary.mp3"):
     """
     try:
         logger.info(f"Converting text to speech: {text[:50]}...")
-        tts = gTTS(text=text, lang='en')
-        tts.save(output_file)
-        logger.info(f"Podcast summary saved as {output_file}")
+        client = texttospeech.TextToSpeechClient()
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL, name="en-US-Chirp3-HD-Charon",
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+        response = client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+        with open(output_file, "wb") as out:
+            out.write(response.audio_content)
+            print('Audio content written to file "output.mp3"')
     except Exception as e:
         logger.exception(f"Error in text_to_speech: {e}")
         raise e
